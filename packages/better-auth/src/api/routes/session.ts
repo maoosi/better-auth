@@ -114,9 +114,8 @@ export const getSession = <Option extends BetterAuthOptions>() =>
 
 					if (strategy === "jwe") {
 						// Decode JWE (encrypted). `ignoreExpiration` lets an authentic but
-						// expired cookie decode so the expiry handling below treats it as a
-						// cache miss and falls back to the DB, instead of logging the user
-						// out. A tampered cookie still fails decryption and returns null.
+						// expired cookie decode so the expiry check below falls back to the
+						// DB instead of logging the user out (a tampered cookie still fails).
 						const payload = await symmetricDecodeJWT<{
 							session: Session;
 							user: User;
@@ -145,10 +144,8 @@ export const getSession = <Option extends BetterAuthOptions>() =>
 							return ctx.json(null);
 						}
 					} else if (strategy === "jwt") {
-						// Decode JWT (signed with HMAC, not encrypted). `ignoreExpiration`
-						// lets an authentic but expired cookie decode so the expiry handling
-						// below falls back to the DB instead of logging the user out. A
-						// tampered cookie still fails signature verification and returns null.
+						// Decode JWT (signed, not encrypted). Same `ignoreExpiration` as the
+						// jwe branch above: an expired cookie falls back to the DB, not logout.
 						const payload = await verifyJWT<{
 							session: Session;
 							user: User;
