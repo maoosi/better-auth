@@ -113,7 +113,10 @@ export const getSession = <Option extends BetterAuthOptions>() =>
 						ctx.context.options.session?.cookieCache?.strategy || "compact";
 
 					if (strategy === "jwe") {
-						// Decode JWE (encrypted)
+						// Decode JWE (encrypted). `ignoreExpiration` lets an authentic but
+						// expired cookie decode so the expiry handling below treats it as a
+						// cache miss and falls back to the DB, instead of logging the user
+						// out. A tampered cookie still fails decryption and returns null.
 						const payload = await symmetricDecodeJWT<{
 							session: Session;
 							user: User;
@@ -124,6 +127,7 @@ export const getSession = <Option extends BetterAuthOptions>() =>
 							sessionDataCookie,
 							ctx.context.secretConfig,
 							"better-auth-session",
+							{ ignoreExpiration: true },
 						);
 
 						if (payload && payload.session && payload.user) {
@@ -141,14 +145,19 @@ export const getSession = <Option extends BetterAuthOptions>() =>
 							return ctx.json(null);
 						}
 					} else if (strategy === "jwt") {
-						// Decode JWT (signed with HMAC, not encrypted)
+						// Decode JWT (signed with HMAC, not encrypted). `ignoreExpiration`
+						// lets an authentic but expired cookie decode so the expiry handling
+						// below falls back to the DB instead of logging the user out. A
+						// tampered cookie still fails signature verification and returns null.
 						const payload = await verifyJWT<{
 							session: Session;
 							user: User;
 							updatedAt: number;
 							version?: string;
 							exp?: number;
-						}>(sessionDataCookie, ctx.context.secret);
+						}>(sessionDataCookie, ctx.context.secret, {
+							ignoreExpiration: true,
+						});
 
 						if (payload && payload.session && payload.user) {
 							sessionDataPayload = {

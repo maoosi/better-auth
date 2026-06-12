@@ -5,6 +5,7 @@ import {
 	calculateJwkThumbprint,
 	decodeProtectedHeader,
 	EncryptJWT,
+	errors,
 	jwtDecrypt,
 	jwtVerify,
 	SignJWT,
@@ -28,11 +29,20 @@ export async function signJWT(
 export async function verifyJWT<T = any>(
 	token: string,
 	secret: string,
+	options?: { ignoreExpiration?: boolean },
 ): Promise<T | null> {
 	try {
 		const verified = await jwtVerify(token, new TextEncoder().encode(secret));
 		return verified.payload as T;
-	} catch {
+	} catch (e) {
+		// An expired token is still authentic: its signature was verified before the
+		// `exp` claim was checked. When the caller opts in, hand back the decoded
+		// payload so it can apply its own expiry handling, rather than discarding a
+		// genuine token. Tampered/invalid tokens fail signature verification and
+		// never reach here, so they still return null.
+		if (options?.ignoreExpiration && e instanceof errors.JWTExpired) {
+			return e.payload as T;
+		}
 		return null;
 	}
 }
@@ -119,6 +129,7 @@ export async function symmetricDecodeJWT<T = any>(
 	token: string,
 	secret: string | SecretConfig,
 	salt: string,
+	options?: { ignoreExpiration?: boolean },
 ): Promise<T | null> {
 	if (!token) return null;
 	// Parse the JWT header to check if kid is present
@@ -158,7 +169,14 @@ export async function symmetricDecodeJWT<T = any>(
 			jwtDecryptOpts,
 		);
 		return payload as T;
-	} catch {
+	} catch (e) {
+		// An expired token is still authentic: the JWE was decrypted before the `exp`
+		// claim was checked. When the caller opts in, hand back the decoded payload so
+		// it can apply its own expiry handling, rather than discarding a genuine token.
+		// Tampered/corrupted tokens fail decryption and never reach here.
+		if (options?.ignoreExpiration && e instanceof errors.JWTExpired) {
+			return e.payload as T;
+		}
 		// Only try fallback if token has no kid
 		if (hasKid) {
 			return null;
@@ -176,7 +194,10 @@ export async function symmetricDecodeJWT<T = any>(
 					jwtDecryptOpts,
 				);
 				return payload as T;
-			} catch {
+			} catch (e2) {
+				if (options?.ignoreExpiration && e2 instanceof errors.JWTExpired) {
+					return e2.payload as T;
+				}
 				continue;
 			}
 		}

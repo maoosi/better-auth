@@ -1003,6 +1003,49 @@ describe("cookie cache with JWE strategy", async () => {
 	});
 });
 
+/**
+ * @see https://github.com/better-auth/better-auth/issues/10021
+ */
+describe("expired cookie cache falls back to the database", async () => {
+	const { client, testUser, cookieSetter } = await getTestInstance({
+		session: {
+			cookieCache: {
+				enabled: true,
+				strategy: "jwe",
+				maxAge: 60,
+			},
+		},
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("should fall back to the database when the JWE session_data cookie has expired", async () => {
+		const headers = new Headers();
+		await client.signIn.email(
+			{
+				email: testUser.email,
+				password: testUser.password,
+			},
+			{
+				onSuccess: cookieSetter(headers),
+			},
+		);
+
+		vi.useFakeTimers();
+		await vi.advanceTimersByTimeAsync(1000 * 90); // past maxAge (60s) + clockTolerance (15s)
+
+		const session = await client.getSession({
+			fetchOptions: {
+				headers,
+			},
+		});
+		expect(session.data).not.toBeNull();
+		expect(session.data?.user.email).toBe(testUser.email);
+	});
+});
+
 describe("cookie cache refreshCache", async () => {
 	const { auth, client, testUser, cookieSetter } = await getTestInstance({
 		session: {
